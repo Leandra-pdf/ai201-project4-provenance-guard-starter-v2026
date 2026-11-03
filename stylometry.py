@@ -1,5 +1,5 @@
 """
-Signal two: the style signal. ← YOU BUILD THIS IN MILESTONE 4
+Signal two: the style signal.
 
 Signal one reads the text for meaning. This one measures it *as text* — the
 shape of it, without understanding a word.
@@ -17,7 +17,7 @@ toward even, mid-length sentences and a narrower band of vocabulary, because
 that's what "most likely next word" produces on average. Human writing is
 lumpier — a three-word sentence next to a forty-word one.
 
-⚠️ **The blind spot, which you have to name in Milestone 1.**
+⚠️ **The blind spot.**
 
 This signal cannot read. It has no idea what the text says. Anything that
 changes the shape without changing the substance moves it — adding typos,
@@ -49,7 +49,8 @@ def words(text: str) -> list[str]:
 
 def sentence_length_spread(text: str) -> float:
     """
-    How much sentence length varies. ← TODO
+    Measure how much sentence lengths vary relative to their average.
+    Higher values mean more variation.
 
     Returns:
         A float. Decide yourself what scale it's on and which direction means
@@ -64,13 +65,32 @@ def sentence_length_spread(text: str) -> float:
     `stdev` raises on fewer than two values. Decide what that should return
     before the attack set decides for you.
     """
-    # TODO: replace this
-    return 0.0
+
+    sentence_list = sentences(text)
+
+    sentence_lengths = []
+
+    for sentence in sentence_list:
+        sentence_lengths.append(len(words(sentence)))
+
+    # A single sentence has no measurable spread.
+    if len(sentence_lengths) < 2:
+        return 0.0
+
+    average_length = statistics.mean(sentence_lengths)
+
+    if average_length == 0:
+        return 0.0
+
+    spread = statistics.stdev(sentence_lengths)
+
+    return spread / average_length
 
 
 def type_token_ratio(text: str) -> float:
     """
-    Unique words over total words. ← TODO
+    Measure vocabulary variety by dividing unique words by total words.
+    Higher values mean more varied vocabulary.
 
     Returns:
         A float between 0 and 1. Higher means more varied vocabulary.
@@ -80,13 +100,21 @@ def type_token_ratio(text: str) -> float:
     directly comparable on it, and if your test inputs vary a lot in length,
     that alone can look like a signal.
     """
-    # TODO: replace this
-    return 0.0
+    word_list = words(text)
+
+    if len(word_list) == 0:
+        return 0.0
+
+    unique_words = set(word_list)
+
+    return len(unique_words) / len(word_list)
+
 
 
 def punctuation_density(text: str) -> float:
     """
-    How much punctuation, relative to length. ← TODO
+    Measure punctuation relative to the number of words.
+    Higher values mean more punctuation per word.
 
     Returns:
         A float. Whether you count all punctuation or only some kinds — commas,
@@ -94,36 +122,50 @@ def punctuation_density(text: str) -> float:
         more interesting than full stops, because they vary more between
         writers.
     """
-    # TODO: replace this
-    return 0.0
+    word_list = words(text)
+
+    if len(word_list) == 0:
+        return 0.0
+
+    # punctuation_marks = re.findall(r"[^\w\s]", text) # all punct counts
+    punctuation_marks = re.findall(r"[:;—…!]", text)
+
+    return len(punctuation_marks) / len(word_list)
 
 
 # ── Combining them ───────────────────────────────────────────────────────────
 
 def style_signal(text: str) -> float:
     """
-    The style signal as a 0–1 score. **Higher means more likely AI.** ← TODO
+    Combine the three writing-style measurements into a 0–1
+    AI-likelihood score. Higher means more likely AI.
 
-    Combine your three measures into one number. Same direction as
-    `detector.model_signal`, so that `scoring.combine_signals` can treat them
-    the same way — if one of your signals runs backwards, everything above it
-    is wrong in a way that's hard to see.
-
-    Two things to decide and write down:
-
-      1. Which direction each measure points. Low spread means more AI-ish, so
-         it needs flipping. Work out which of your three need that.
-      2. How to get each onto a comparable scale. A raw type-token ratio sits
-         between 0 and 1; a raw punctuation count doesn't. Adding them
-         unscaled means whichever has the bigger numbers wins by default.
-
-    Test it on the four calibration inputs from Milestone 4 — clearly AI,
-    clearly human, plain conventional human writing, lightly-edited AI — before
-    you trust it. Plain and ordinary, not formal: formal prose reads as *human*
-    to signal one, and it is plain writing that gets accused.
+    Low sentence variation, low vocabulary variety, and lower
+    punctuation density increase the score.
     """
-    # TODO: replace this
-    return 0.5
+    if len(words(text)) == 0:
+        return 0.5
+
+    spread = sentence_length_spread(text)
+    vocabulary = type_token_ratio(text)
+    punctuation = punctuation_density(text)
+
+    # Low sentence variation is treated as more AI-like.
+    spread_score = 1 / (1 + spread)
+
+    # Lower vocabulary variety is treated as more AI-like.
+    vocabulary_score = 1 - vocabulary
+
+    # Normalize punctuation density to a 0–1 scale.
+    # A density of 0.2 or higher reaches the maximum.
+    punctuation_score = 1 - min(punctuation / 0.2, 1.0)
+
+    # Give each measurement equal weight.
+    combined_score = (
+        spread_score + vocabulary_score + punctuation_score
+    ) / 3
+
+    return combined_score
 
 
 if __name__ == "__main__":
@@ -139,4 +181,4 @@ if __name__ == "__main__":
     print(f"type_token_ratio         {type_token_ratio(text)}")
     print(f"punctuation_density      {punctuation_density(text)}")
     print(f"style_signal             {style_signal(text)}   (higher = more likely AI)")
-    print("\nAll zeros? These are stubs — Milestone 4 is where you build them.")
+    # print("\nAll zeros? These are stubs — Milestone 4 is where you build them.")

@@ -43,12 +43,11 @@ Two things worth knowing before you pick numbers:
 
 ---
 ## 1.
-
-<!-- Your criterion. It must name a number. -->
-
+Clearly AI-generated writing and clearly human-written writing should have combined confidence scores that differ by at least 0.30.
 
 
-**Why this target:**
+
+**Why this target:** The system should produce meaningfully different scores for writing from different sources. If the scores are too similar, the system is not providing useful information to distinguish between them.
 
 
 
@@ -56,11 +55,12 @@ Two things worth knowing before you pick numbers:
 
 ## 2.
 
-<!-- Your criterion. -->
+Only 1 out of 10 pieces of writing that I personally wrote should receive the high-confidence AI label.
 
 
 
-**Why this target:**
+**Why this target:** Incorrectly accusing a real writer of using AI is one of the most serious mistakes this system can make. I want to prioritize protecting human writers, even if that means missing some AI-generated content.
+
 
 
 
@@ -68,11 +68,11 @@ Two things worth knowing before you pick numbers:
 
 ## 3.
 
-<!-- Your criterion. -->
+All three labels (high-confidence AI, high-confidence human, and unsure) must be reachable through at least one test submission each.
 
 
 
-**Why this target:**
+**Why this target:** The system needs to communicate different levels of confidence rather than forcing every submission into an AI or human category. The unsure label is especially important when the signals do not provide enough evidence for a confident decision.
 
 
 
@@ -80,11 +80,11 @@ Two things worth knowing before you pick numbers:
 
 ## 4.
 
-<!-- Your criterion. -->
+Every valid appeal submitted with an existing content_id and non-empty reasoning must be recorded in the audit log, and the corresponding submission status must change to under_review.
 
 
 
-**Why this target:**
+**Why this target:** Writers should have a reliable way to challenge an incorrect decision. Recording the appeal and updating the status ensures their concerns are not lost or ignored.
 
 
 
@@ -92,11 +92,11 @@ Two things worth knowing before you pick numbers:
 
 ## 5.
 
-<!-- Your criterion. -->
+Requests with missing text, empty text, or text exceeding 10,000 characters must be rejected with an HTTP 400 response and a JSON error message.
 
 
 
-**Why this target:**
+**Why this target:** Invalid submissions should not be processed by the detection system. Returning a clear error response helps prevent unexpected behavior and makes it easier for applications using the service to understand what went wrong.
 
 
 

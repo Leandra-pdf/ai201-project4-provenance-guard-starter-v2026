@@ -30,8 +30,12 @@ from flask import Flask, jsonify, request
 
 import audit
 import config
+import detector
+import stylometry
+import scoring
 
 app = Flask(__name__)
+MAX_TEXT_LENGTH = 10_000
 
 
 # ── Rate limiting — UNIT 8 ────────────────────────────────────────────────────
@@ -154,92 +158,139 @@ def health():
 # @limiter.limit(f"{config.RATE_LIMIT_PER_MINUTE}/minute;{config.RATE_LIMIT_PER_DAY}/day")
 def submit():
     """
-    Take a piece of text, decide about it, log the decision, answer.
-    ← TODO — Milestones 3, 4 and 5
+    Receive writing, calculate both signals, combine their scores,
+    record the results in the audit log, and return them.
 
     Expects JSON:
         {"text": "...", "creator_id": "..."}
 
-    Should return JSON with, at minimum:
+    Returns JSON with, at minimum:
         {"content_id": "...", "guess": "...", "confidence": 0.0, "label": "...",
          "model_score": 0.0, "style_score": 0.0}
-
-    ⚠️ **Both signal scores go in the response, not just the log.** Unit 8's
-    `run_attacks.py` and `run_eval.py` read `model_score` and `style_score`
-    straight off this response and put them in your reports. Leave them out and
-    every row of next unit's evidence says `null` — which is exactly the
-    diagnostic you need to name a stage and a mechanism. You do not want to
-    find that out after running the attack set.
-
-    ─────────────────────────────────────────────────────────────────────────
-    Build it in three passes. Do not skip ahead — the ordering is how you tell
-    a broken route from a broken signal.
-
-    **Milestone 3 — the route answers.**
-      1. Return a hardcoded response. Confirm `curl` gets it back before you
-         add any logic at all.
-      2. Then pull `text` and `creator_id` out of the payload.
-      3. Then call ONE signal — `detector.model_signal(text)` — and put the
-         real number in. Leave confidence and label as placeholders.
-      4. Log every submission with `audit.log_decision(...)`. The content_id
-         matters: `/appeal` needs it, and a student who skips it rebuilds this
-         whole flow later.
-
-    **Milestone 4 — the second signal and the score.**
-      5. Add `stylometry.style_signal(text)`.
-      6. Combine them with `scoring.combine_signals(...)`.
-      7. Log BOTH signal scores alongside the combined one, and put them in the
-         response too. Next unit you can't diagnose anything without them.
-
-    **Milestone 5 — the label.**
-      8. `scoring.score_to_label(...)` and put the real label in the response.
-
-    ─────────────────────────────────────────────────────────────────────────
-    Worth deciding early, because unit 8's attack set will decide it for you:
-    what should this do when `text` is missing, empty, or enormous? A crash on
-    a malformed input is one of the most common real failures there is.
     """
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
 
-    # TODO: delete this and build the route.
+    # Make sure the request contains a JSON object.
+    if not isinstance(payload, dict):
+        return jsonify({"error": "A valid JSON object is required."}), 400
+
+    text = payload.get("text", "")
+    creator_id = payload.get("creator_id", "")
+
+    # Check that the required information was provided.
+    if not isinstance(text, str) or not text.strip():
+        return jsonify({"error": "Text is required."}), 400
+
+    if not isinstance(creator_id, str) or not creator_id.strip():
+        return jsonify({"error": "Creator ID is required."}), 400
+
+    # Reject submissions that exceed the maximum length.
+    if len(text) > MAX_TEXT_LENGTH:
+        return jsonify({
+            "error": "Text exceeds the maximum length of 10000 characters."
+        }), 413
+
+    # Give this submission a unique ID.
+    content_id = str(uuid.uuid4())
+
+    # Calculate both signals.
+    model_score = detector.model_signal(text)
+    style_score = stylometry.style_signal(text)
+
+    # Combine the two signal scores.
+    combined_score = scoring.combine_signals(
+        model_score,
+        style_score
+    )
+
+    # Convert the combined score into a guess and reader-facing label.
+    guess, label = scoring.score_to_label(combined_score)
+
+    # Use the combined score as the confidence score.
+    confidence = combined_score
+
+    # Record all three scores in the audit log.
+    audit.log_decision(
+        content_id=content_id,
+        creator_id=creator_id,
+        guess=guess,
+        model_score=model_score,
+        style_score=style_score,
+        combined_score=combined_score,
+        label=label,
+    )
+
+    # Return the results.
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /submit isn't built yet — see the TODO in app.py.",
-        "you_sent": {
-            "text_length": len(payload.get("text", "")),
-            "creator_id": payload.get("creator_id"),
-        },
-    }), 501
+        "content_id": content_id,
+        "guess": guess,
+        "confidence": confidence,
+        "label": label,
+        "model_score": model_score,
+        "style_score": style_score,
+        "combined_score": combined_score,
+    })
 
 
 @app.post("/appeal")
 def appeal():
     """
-    A writer says you got it wrong. ← TODO — Milestone 5
+    Receive a writer's appeal, record their reasoning in the audit log,
+    and mark the submission as under review.
 
     Expects JSON:
         {"content_id": "...", "reasoning": "..."}
-
-    Should:
-      1. Check the content_id actually exists — `audit.entries_for(id)` tells
-         you. A typo here fails silently and looks like a broken endpoint,
-         which is the single most common way this milestone eats an hour.
-      2. Record the appeal with `audit.log_appeal(...)`, which moves the item
-         to `under_review`.
-      3. Confirm to the writer. No automatic re-checking needed.
-
-    This is the smallest endpoint in the project and the one that matters most
-    to the person on the other end. It's the only thing standing between a
-    wrong accusation and nothing at all.
     """
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
 
-    # TODO: delete this and build the route.
+    # Make sure the request contains a JSON object.
+    if not isinstance(payload, dict):
+        return jsonify({"error": "A valid JSON object is required."}), 400
+
+    content_id = payload.get("content_id", "")
+    reasoning = payload.get("reasoning", "")
+
+    # Check that the required information was provided.
+    if not isinstance(content_id, str) or not content_id.strip():
+        return jsonify({"error": "Content ID is required."}), 400
+
+    if not isinstance(reasoning, str) or not reasoning.strip():
+        return jsonify({"error": "Appeal reasoning is required."}), 400
+
+    content_id = content_id.strip()
+    reasoning = reasoning.strip()
+
+    # Check that the original submission exists.
+    entries = audit.entries_for(content_id)
+
+    if not entries:
+        return jsonify({"error": "Content ID not found."}), 404
+
+    # Find the original decision so we can associate the appeal
+    # with the creator who submitted the writing.
+    original_entry = None
+
+    for entry in entries:
+        if entry.get("event") != "appeal" and entry.get("creator_id"):
+            original_entry = entry
+            break
+
+    if original_entry is None:
+        return jsonify({"error": "Original submission not found."}), 404
+
+    # Record the appeal in the audit log.
+    audit.log_appeal(
+        content_id=content_id,
+        creator_id=original_entry["creator_id"],
+        reasoning=reasoning,
+    )
+
+    # Confirm that the appeal was received.
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /appeal isn't built yet — see the TODO in app.py.",
-        "you_sent": payload,
-    }), 501
+        "content_id": content_id,
+        "status": "under_review",
+        "message": "Your appeal has been received and is under review.",
+    })
 
 
 # ── Already works ─────────────────────────────────────────────────────────────
