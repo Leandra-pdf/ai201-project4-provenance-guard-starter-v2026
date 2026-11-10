@@ -330,6 +330,15 @@ The original decision remains in the audit log with status `decided`, while the 
 - *What I changed:* I narrowed the measurement to five punctuation marks: colons, semicolons, em dashes, ellipses, and exclamation marks. I implemented the measurement myself so that it counts those specific marks relative to the number of words in the text.
 
 
+
+**Moment 3** Choosing new classification thresholds
+
+- **What I asked for:** I asked AI to help me diagnose why Criterion 2 was failing and determine what threshold values would allow the detector to produce all three labels.
+- **What came back:** AI helped me examine the model, style, and combined scores from my six test submissions. It suggested raising the human threshold and AI threshold to make the unsure range wider.
+- **What I changed:** I raised the `HUMAN_THRESHOLD` from `0.35` to `0.65` and the `AI_THRESHOLD` from `0.61` to `0.80`. I kept the model and style weights unchanged. I chose these values based on the scores from my test cases, then reran the evaluations to see whether the change worked. All five criteria passed in the after evaluation, and my own writing no longer received an AI label.
+
+
+
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
 ---
@@ -480,11 +489,11 @@ FP03 is the worst outcome. This test represented a non-native English speaker wr
 
 | Criterion                              | Target                             | Run 1      | Run 2      | Run 3      | Verdict |
 | -------------------------------------- | ---------------------------------- | ---------- | ---------- | ---------- | ------- |
-| 1. my own writing                      | No more than 1/10 classified as AI | 1/10 AI    | 1/10 AI    | 1/10 AI    | PASS    |
-| 2. label coverage | All 3 labels reached across 6 submissions | 5 AI, 1 unsure, 0 human | 5 AI, 1 unsure, 0 human | 5 AI, 1 unsure, 0 human | FAIL    |
-| 3. appeals are recorded correctly      | 5/5 appeals accepted               | 5/5        | 5/5        | 5/5        | PASS    |
-| 4. invalid text or inputs return 400   | 5/5 invalid requests return 400    | 5/5        | 5/5        | 5/5        | PASS    |
-| 5. every decision appears in audit log | 20/20 decisions recorded           | 20/20      | 20/20      | 20/20      | PASS    |
+| 1. my own writing                      | No more than 1/10 classified as AI | 1/10 AI    | 1/10 AI    | 1/10 AI    | MET    |
+| 2. label coverage | All 3 labels reached across 6 submissions | 5 AI, 1 unsure, 0 human | 5 AI, 1 unsure, 0 human | 5 AI, 1 unsure, 0 human | MISSED    |
+| 3. appeals are recorded correctly      | 5/5 appeals accepted               | 5/5        | 5/5        | 5/5        | MET    |
+| 4. invalid text or inputs return 400   | 5/5 invalid requests return 400    | 5/5        | 5/5        | 5/5        | MET    |
+| 5. every decision appears in audit log | 20/20 decisions recorded           | 20/20      | 20/20      | 20/20      | MET    |
 
 
 **Real output from one trial**:
@@ -503,48 +512,68 @@ FP03 is the worst outcome. This test represented a non-native English speaker wr
 
 **Diagnoses**
 
-Criterion 2
+**Criterion 2**
 
 All six submissions in each trial were classified, but the detector only produced two of the three possible labels: five `ai` and one `unsure`. None received the `human` label.
 
 The issue appears to be with the scores reaching the combining rule. The label mapping is not necessarily broken. It seems the tested inputs simply did not produce a low enough combined score to reach the human category.
 
-I should inspect the `model_score`, `style_score`, and `combined_score` for the six submissions to determine which signal is contributing most to the scores staying above the human threshold. Adjustments will be made based on the observations.
+Plan:
+
+The combined scores were consistently above the original human threshold of `0.35`. To address this, I am raising the human threshold to `0.61` and the AI threshold to `0.80`. This widens the range of scores classified as `unsure` while allowing lower combined scores to reach the `human` category. I am also updating the conflict-handling rule so that when the model and style signals strongly disagree, the resulting score stays in the middle of the new unsure range.
+
 
 ---
+
+
 
 ## The Improvement
 
 **What I changed:**
 
+I adjusted the classification thresholds to widen the unsure range. I raised `HUMAN_THRESHOLD` from `0.35` to `0.65` and `AI_THRESHOLD` from `0.61` to `0.80`. I also updated the conflict-handling rule so that when the model and style signals strongly disagree, the combined score stays in the middle of the new unsure range. The model and style weights remained unchanged at 70% and 30%.
+
 **Which diagnosis pointed at it:**
+
+Criterion 2 failed because all six submissions in each trial were classified as either `ai` or `unsure`. None received the `human` label. The combined scores were not low enough to reach the original human threshold of `0.35`. This pointed to a threshold adjustment as the most appropriate improvement.
 
 ### Attack Run — After
 
-<!-- Same format. `run_attacks.py --label after` -->
+56 attacks were tested.
 
+| Attack category | Results |
+|---|---|
+| Evasion | 7 human, 2 unsure, 1 AI |
+| False positive | 5 unsure, 2 AI, 1 human |
+| Prompt injection | 6 human |
+| Malformed | 1 HTTP 500, 1 HTTP 400, 1 HTTP 413, 5 HTTP 200 |
+| Request validation | 11 HTTP 400, 1 HTTP 429 |
+| Flood | 6 HTTP 200, 6 HTTP 429 |
 
+One attack (MF02) was automatically marked `BROKE` because it returned HTTP 500.
 
-**Did it help, and how do I know:**
+**Did it help, and how do I know?**
 
-<!-- Widening the unsure band usually fixes one problem and creates another.
-     Reporting that trade honestly is worth full credit. -->
+The improvement helped with the original label coverage problem. Criterion 2 now produces all three labels in every trial: three `ai`, two `unsure`, and one `human`. Criterion 1 also improved: none of my ten writing samples received the `ai` label after the change. Nine received `human` and one received `unsure`.
 
+The attack results show a trade-off. Five of the eight false-positive attacks received `unsure`, suggesting that the wider unsure range helped reduce AI classifications for these cases. However, two still received `ai`, and seven of the ten evasion attacks received `human`. The threshold adjustment improved classification coverage and protection of my own writing, but it did not solve evasion or all false positives. The malformed-input test also exposed an HTTP 500 error that still needs attention.
 
 
 ---
 
+
+
 ## What's Still Broken
 
-<!-- For each attack still getting through and each criterion still missed:
-     what you'd do, and why you stopped. -->
+The evasion attacks remain a weakness. Seven of the ten evasion submissions received the `human` label, meaning AI-generated text could still avoid being identified. I would investigate how the model and style signals respond to these examples and consider improving the detection logic. I stopped because this milestone focused on one targeted improvement, and because of time.
 
+Some false positives also remain. Two of the eight false-positive submissions still received the `ai` label. I would examine those examples individually to understand why they scored so highly. I stopped because raising the thresholds already improved the results, and making them even more conservative could cause more AI-generated text to be labeled `unsure` or `human`.
 
+The malformed-input tests also exposed an HTTP 500 error in MF02. I would inspect the request and server traceback to identify the unhandled exception and add appropriate validation. I stopped because this was separate from the threshold issue I selected.
 
-**The trade I'd make if this ran for real:**
+## The trade I'd make if this ran for real:
 
-<!-- Two sentences. Fewer wrong accusations means more AI text getting through.
-     Say which way you'd go and WHO PAYS FOR IT. -->
+I would prioritize avoiding false accusations, even if that means more AI-generated text gets through or receives an `unsure` label. People whose legitimate writing is incorrectly accused of being AI would pay the price of a more aggressive detector, so I would rather protect those writers than maximize the number of AI submissions identified.
 
 
 

@@ -54,10 +54,13 @@ def combine_signals(model_score: float, style_score: float) -> float:
     if (model_says_ai and style_says_human) or (
         model_says_human and style_says_ai
     ):
-        return 0.50
+        return (config.HUMAN_THRESHOLD + config.AI_THRESHOLD) / 2
 
     # Otherwise, use the weighted average.
-    combined_score = (model_score * 0.70) + (style_score * 0.30)
+    combined_score = (
+        model_score * config.WEIGHT_MODEL_SIGNAL
+        + style_score * config.WEIGHT_STYLE_SIGNAL
+    )
 
     return combined_score
 
