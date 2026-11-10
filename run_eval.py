@@ -113,28 +113,121 @@ def main():
         trials = []
         for trial in range(1, args.trials + 1):
             results = []
-            for i, body in enumerate(bodies_for(scenario), 1):
-                preview = describe(body)
-                try:
-                    response = requests.post(f"{args.url}/submit", json=body,
-                                             timeout=args.timeout)
-                    payload = response.json() if response.content else {}
-                    results.append({
-                        "status": response.status_code,
-                        "guess": payload.get("guess"),
-                        "confidence": payload.get("confidence"),
-                        "model_score": payload.get("model_score"),
-                        "style_score": payload.get("style_score"),
-                        "label": payload.get("label"),
-                        "sent": preview,
-                    })
-                except Exception as exc:  # noqa: BLE001
-                    results.append({"status": None, "error": f"{type(exc).__name__}: {exc}",
-                                    "sent": preview})
+            if scenario.get("criterion") == 3:
+                for i, text in enumerate(scenario["texts"], 1):
+                    creator_id = f"eval_appeal_{i}"
+                    preview = text[:70]
+
+                    try:
+                        # First, create a normal submission.
+                        submission_response = requests.post(
+                            f"{args.url}/submit",
+                            json={
+                                "text": text,
+                                "creator_id": creator_id,
+                            },
+                            timeout=args.timeout,
+                        )
+
+                        submission_payload = (
+                            submission_response.json()
+                            if submission_response.content else {}
+                        )
+
+                        # We need a successful submission and its content ID
+                        # before we can submit an appeal.
+                        content_id = submission_payload.get("content_id")
+
+                        if submission_response.status_code != 200 or not content_id:
+                            results.append({
+                                "submission_status": submission_response.status_code,
+                                "content_id": content_id,
+                                "appeal_status": None,
+                                "error": "Submission failed or content ID was missing.",
+                                "sent": preview,
+                            })
+                            continue
+
+                        # Next, appeal the exact submission we just created.
+                        reasoning = scenario["appeal_reasons"][i - 1]
+
+                        appeal_response = requests.post(
+                            f"{args.url}/appeal",
+                            json={
+                                "content_id": content_id,
+                                "reasoning": reasoning,
+                            },
+                            timeout=args.timeout,
+                        )
+
+                        appeal_payload = (
+                            appeal_response.json()
+                            if appeal_response.content else {}
+                        )
+
+                        results.append({
+                            "submission_status": submission_response.status_code,
+                            "content_id": content_id,
+                            "guess": submission_payload.get("guess"),
+                            "confidence": submission_payload.get("confidence"),
+                            "model_score": submission_payload.get("model_score"),
+                            "style_score": submission_payload.get("style_score"),
+                            "label": submission_payload.get("label"),
+                            "appeal_status": appeal_response.status_code,
+                            "appeal_result": appeal_payload.get("status"),
+                            "appeal_message": appeal_payload.get("message"),
+                            "reasoning": reasoning,
+                            "sent": preview,
+                        })
+
+                    except Exception as exc:  # noqa: BLE001
+                        results.append({
+                            "status": None,
+                            "error": f"{type(exc).__name__}: {exc}",
+                            "sent": preview,
+                        })
+
+            else:
+                for i, body in enumerate(bodies_for(scenario), 1):
+                    preview = describe(body)
+                    try:
+                        response = requests.post(
+                            f"{args.url}/submit",
+                            json=body,
+                            timeout=args.timeout,
+                        )
+                        payload = response.json() if response.content else {}
+
+                        results.append({
+                            "status": response.status_code,
+                            "guess": payload.get("guess"),
+                            "confidence": payload.get("confidence"),
+                            "model_score": payload.get("model_score"),
+                            "style_score": payload.get("style_score"),
+                            "label": payload.get("label"),
+                            "sent": preview,
+                        })
+
+                    except Exception as exc:  # noqa: BLE001
+                        results.append({
+                            "status": None,
+                            "error": f"{type(exc).__name__}: {exc}",
+                            "sent": preview,
+                        })
 
             trials.append(results)
-            guesses = [r.get("guess") or "—" for r in results]
-            print(f"  trial {trial}: {', '.join(guesses)}")
+            if scenario.get("criterion") == 3:
+                outcomes = [
+                    r.get("appeal_result") or "failed"
+                    for r in results
+                ]
+            else:
+                outcomes = [
+                    r.get("guess") or "—"
+                    for r in results
+                ]
+
+            print(f"  trial {trial}: {', '.join(outcomes)}")
 
         rows.append({"scenario": scenario, "trials": trials})
 

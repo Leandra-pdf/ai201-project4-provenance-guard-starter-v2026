@@ -181,10 +181,10 @@ If the two signals strongly disagree, meaning one indicates AI and the other ind
 
 - Model signal weight: **0.70 (70%)**
 - Style signal weight: **0.30 (30%)**
-- AI threshold: **0.70 or higher**
-- Human threshold: **0.40 or lower**
-- Unsure: **Between 0.40 and 0.70**
-- Disagreement override: If one signal is 0.70 or higher and the other is 0.40 or lower, classify as unsure.
+- AI threshold: **0.65 or higher**
+- Human threshold: **0.35 or lower**
+- Unsure: **Between 0.35 and 0.65**
+- Disagreement override: If one signal is 0.65 or higher and the other is 0.35 or lower, classify as unsure.
 
 **Where it lives:** `scoring.py::combine_signals`
 
@@ -192,16 +192,16 @@ The combining rule will be implemented in `combine_signals()` in `scoring.py`. T
 
 **A case where my two signals split, and what my rule does with it:**
 
-- For example, if the model signal scores 0.85 (high likelihood of AI) but the style signal scores 0.30 (low likelihood of AI), the signals disagree. Since one signal is above the AI threshold of 0.70 and the other is below the human threshold of 0.40, my disagreement rule classifies the result as unsure instead of relying on the weighted average. This prevents a strong disagreement between the signals from producing an overly confident classification.
+- For example, if the model signal scores 0.85 (high likelihood of AI) but the style signal scores 0.30 (low likelihood of AI), the signals disagree. Since one signal is above the AI threshold of 0.65 and the other is below the human threshold of 0.35, my disagreement rule classifies the result as unsure instead of relying on the weighted average. This prevents a strong disagreement between the signals from producing an overly confident classification.
 ---
 
 ## Label Variants
 
 | Label | Score range | The exact text a reader sees |
 |---|---|---|
-| high-confidence human | 0.00–0.40 | "We think this was probably written by a person." |
-| unsure | Above 0.40 and below 0.70 | "We can't confidently tell whether this was written by a person or by AI." |
-| high-confidence AI | 0.70–1.00 | "We think this was probably written by AI." |
+| high-confidence human | 0.00–0.35 | "We think this was probably written by a person." |
+| unsure | Above 0.35 and below 0.65 | "We can't confidently tell whether this was written by a person or by AI." |
+| high-confidence AI | 0.65–1.00 | "We think this was probably written by AI." |
 
 **Why I worded the "unsure" one this way:**
 
@@ -478,40 +478,38 @@ FP03 is the worst outcome. This test represented a non-native English speaker wr
 
 ## Run Log and Verdicts
 
-<!-- Your five criteria across three trials. `run_eval.py --label before`. -->
+| Criterion                              | Target                             | Run 1      | Run 2      | Run 3      | Verdict |
+| -------------------------------------- | ---------------------------------- | ---------- | ---------- | ---------- | ------- |
+| 1. my own writing                      | No more than 1/10 classified as AI | 1/10 AI    | 1/10 AI    | 1/10 AI    | PASS    |
+| 2. label coverage | All 3 labels reached across 6 submissions | 5 AI, 1 unsure, 0 human | 5 AI, 1 unsure, 0 human | 5 AI, 1 unsure, 0 human | FAIL    |
+| 3. appeals are recorded correctly      | 5/5 appeals accepted               | 5/5        | 5/5        | 5/5        | PASS    |
+| 4. invalid text or inputs return 400   | 5/5 invalid requests return 400    | 5/5        | 5/5        | 5/5        | PASS    |
+| 5. every decision appears in audit log | 20/20 decisions recorded           | 20/20      | 20/20      | 20/20      | PASS    |
 
-| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
-|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |
 
-**Real output from one trial**, pasted as text, naming the file and function
-that produced it:
+**Real output from one trial**:
 
 ```json
-
+{
+    "status": 200,
+    "guess": "unsure",
+    "confidence": 0.5,
+    "model_score": 0.0819,
+    "style_score": 0.7142857142857143,
+    "label": "We can't confidently tell whether this was written by a person or by AI.",
+    "sent": "Nested loops does not always mean n^2, could mean n x m instead."
+}
 ```
 
 **Diagnoses**
 
-<!-- For each miss AND each broken attack: the stage and the mechanism.
+Criterion 2
 
-     Your service has five stages: the route, signal one, signal two, the
-     combining rule, and the label mapping.
+All six submissions in each trial were classified, but the detector only produced two of the three possible labels: five `ai` and one `unsure`. None received the `human` label.
 
-     Not a diagnosis:  "The evasion attacks got through."
-     A diagnosis:      "Four evasion inputs got through. All four had typos
-                        added to AI-generated text. My second signal measures
-                        word variety, and typos raise word variety — so it read
-                        them as more human. My combining rule weights that
-                        signal at 0.6, so it dragged the whole score down."
+The issue appears to be with the scores reaching the combining rule. The label mapping is not necessarily broken. It seems the tested inputs simply did not produce a low enough combined score to reach the human category.
 
-     Look for a pattern. Five failures on one signal is one problem, not five. -->
-
-
+I should inspect the `model_score`, `style_score`, and `combined_score` for the six submissions to determine which signal is contributing most to the scores staying above the human threshold. Adjustments will be made based on the observations.
 
 ---
 
