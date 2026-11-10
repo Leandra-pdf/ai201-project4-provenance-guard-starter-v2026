@@ -336,49 +336,145 @@ The original decision remains in the audit log with status `decided`, while the 
 
 ## Rate Limiting
 
-**My limits:** ___ per minute, ___ per day
+**My limits:** 6 per minute, 120 per day
 
 **Why those numbers and not others:**
-<!-- Think about two people: a real writer submitting their own work a few
-     times an hour, and a script sending a thousand variations to map your
-     thresholds. Your numbers have to be liveable for the first and hostile to
-     the second. -->
 
-**What a caller counts as:** <!-- per address, or per creator_id? They fail
-differently — one script can look like a thousand callers, and one household
-can look like one. -->
+I chose these limits to allow a real writer to submit several pieces of work without running into restrictions during normal use, while making it harder for an automated script to send large numbers of variations to probe the detector's thresholds. Six submissions per minute allows occasional repeated testing, and the daily limit of 120 provides room for regular use without allowing unlimited submissions.
+
+**What a caller counts as:**
+
+Requests are counted by `creator_id` when the request contains a valid, non-empty creator ID. If the creator ID is missing or invalid, the limiter falls back to the caller's IP address. This makes it harder for a script to bypass the limit by changing creator IDs only if it continues using the same ID. However, a script can potentially get around per-creator limits by submitting different creator IDs. The IP fallback catches requests without a valid creator ID, but it does not prevent that particular bypass.
 
 **The run of status codes when I pushed past it:**
 
-<!-- python run_attacks.py --flood 15 -->
-
+```text
+200 200 200 200 200 200 429 429 429 429 429 429 429 429 429
 ```
 
-```
+The first six submissions were accepted with HTTP 200. The next nine were rejected with HTTP 429. This confirms that the per-minute limit was enforced once the caller exceeded six submissions.
 
 ---
 
 ## Attack Run — Before
 
-<!-- Every attack with its outcome and a held-or-broke mark.
-     `run_attacks.py --label before` produces the table. -->
-
-
-
 **Ten audit log entries from the run**
 
-<!-- Choose entries that show the interesting failures, not the ten easiest. -->
-
 ```json
-
+[
+  {
+    "timestamp": "2026-11-05T00:14:20+00:00",
+    "content_id": "bc1dcfb3-91cd-4b09-a500-120049b8aa95",
+    "creator_id": "attacker_EV09",
+    "guess": "ai",
+    "model_score": 0.7042,
+    "style_score": 0.6115224309671595,
+    "combined_score": 0.6763967292901478,
+    "label": "We think this was probably written by AI.",
+    "status": "decided"
+  },
+  {
+    "timestamp": "2026-11-05T00:14:21+00:00",
+    "content_id": "c96976a3-26c2-4ae2-bab4-3a4182871efb",
+    "creator_id": "attacker_FP08",
+    "guess": "unsure",
+    "model_score": 0.3223,
+    "style_score": 0.5659435069160126,
+    "combined_score": 0.39539305207480374,
+    "label": "We can't confidently tell whether this was written by a person or by AI.",
+    "status": "decided"
+  },
+  {
+    "timestamp": "2026-11-05T00:14:20+00:00",
+    "content_id": "82e6fdd1-47f6-4021-b6b1-584c31137a56",
+    "creator_id": "attacker_EV10",
+    "guess": "ai",
+    "model_score": 0.9792,
+    "style_score": 0.7989654104558429,
+    "combined_score": 0.9251296231367527,
+    "label": "We think this was probably written by AI.",
+    "status": "decided"
+  },
+  {
+    "timestamp": "2026-11-05T00:14:20+00:00",
+    "content_id": "a2427547-316e-4ca8-bfb8-1343ffcc8f66",
+    "creator_id": "attacker_FP03",
+    "guess": "ai",
+    "model_score": 0.8051,
+    "style_score": 0.6766711325761737,
+    "combined_score": 0.7665713397728522,
+    "label": "We think this was probably written by AI.",
+    "status": "decided"
+  },
+  {
+    "timestamp": "2026-11-05T00:14:21+00:00",
+    "content_id": "e8d3cf4f-1855-4cc9-af25-eb499d080f29",
+    "creator_id": "attacker_FP07",
+    "guess": "ai",
+    "model_score": 0.8816,
+    "style_score": 0.7067009167576032,
+    "combined_score": 0.829130275027281,
+    "label": "We think this was probably written by AI.",
+    "status": "decided"
+  },
+  {
+    "timestamp": "2026-11-05T00:14:21+00:00",
+    "content_id": "15d79a64-b143-4180-82ce-8f7e07f38116",
+    "creator_id": "attacker_PI05",
+    "guess": "unsure",
+    "model_score": 0.6401,
+    "style_score": 0.4043186974387642,
+    "combined_score": 0.5693656092316293,
+    "label": "We can't confidently tell whether this was written by a person or by AI.",
+    "status": "decided"
+  },
+  {
+    "timestamp": "2026-11-05T00:14:21+00:00",
+    "content_id": "355c86c7-6728-45f6-a433-f719a2ebdcc5",
+    "creator_id": "attacker_MF03",
+    "guess": "unsure",
+    "model_score": 0.0,
+    "style_score": 0.6666666666666666,
+    "combined_score": 0.5,
+    "label": "We can't confidently tell whether this was written by a person or by AI.",
+    "status": "decided"
+  },
+  {
+    "timestamp": "2026-11-05T00:14:21+00:00",
+    "content_id": "b3f6eee4-71d0-444e-8de0-dbfeac21ccc0",
+    "creator_id": "attacker_MF06",
+    "guess": "ai",
+    "model_score": 0.9969,
+    "style_score": 0.5,
+    "combined_score": 0.84783,
+    "label": "We think this was probably written by AI.",
+    "status": "decided"
+  },
+  {
+    "timestamp": "2026-11-05T00:14:21+00:00",
+    "content_id": "ecb20057-eb0a-4b38-b3d3-713aa130d1f3",
+    "creator_id": "attacker_MF07",
+    "guess": "ai",
+    "model_score": 0.9064,
+    "style_score": 0.5,
+    "combined_score": 0.78448,
+    "label": "We think this was probably written by AI.",
+    "status": "decided"
+  },
+  {
+    "timestamp": "2026-11-05T00:14:22+00:00",
+    "creator_id": "attacker_flood",
+    "event": "rejected",
+    "status": "rejected",
+    "reason": "rate_limited",
+    "limit": "6 per 1 minute"
+  }
+]
 ```
 
-**The single worst outcome** — the one I'd least want to explain to a writer
-whose work got caught by it:
+**The single worst outcome**:
 
-
-
----
+FP03 is the worst outcome. This test represented a non-native English speaker writing carefully, but the detector classified the submission as AI with a combined score of **0.767**. The model score was 0.8051, and the style score was 0.6767, so both signals contributed to the high result. A writer could be incorrectly accused of using AI simply because their writing is careful and formal. This demonstrates why the detector's result should be treated as an estimate rather than proof of authorship.
 
 ## Run Log and Verdicts
 
